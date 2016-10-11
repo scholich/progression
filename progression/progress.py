@@ -177,6 +177,55 @@ def get_identifier(name=None, pid=None, bold=True):
         return "{}{} ({}){}".format(esc_bold, name, pid, esc_no_char_attr)
 
 
+def _wrapper_func(func, args, shared_mem_run, shared_mem_pause, interval, log_queue, sigint, sigterm, name,
+                  logging_level, conn_send):
+    """
+        to be executed as a separate process (that's why this functions is declared static)
+    """
+    prefix = get_identifier(name) + ' '
+    global log
+    log = logging.getLogger(__name__ + '.' + "log_{}".format(get_identifier(name, bold=False)))
+    log.setLevel(logging_level)
+
+    # try:
+    #     log.addHandler(QueueHandler(log_queue))
+    # except NameError:
+    #     log.addHandler(def_handl)
+
+    sys.stdout = StdoutPipe(conn_send)
+
+    log.debug("enter wrapper_func")
+
+    SIG_handler_Loop(sigint, sigterm, log, prefix)
+
+    while shared_mem_run.value:
+        try:
+            # in pause mode, simply sleep
+            if shared_mem_pause.value:
+                quit_loop = False
+            else:
+                # if not pause mode -> call func and see what happens
+                try:
+                    quit_loop = func(*args)
+                except LoopInterruptError:
+                    raise
+                except Exception as e:
+                    log.error("error %s occurred in loop alling 'func(*args)'", type(e))
+                    log.info("show traceback.print_exc()\n%s", traceback.format_exc())
+                    sys.exit(-1)
+
+                if quit_loop is True:
+                    log.debug("loop stooped because func returned True")
+                    break
+
+            time.sleep(interval)
+        except LoopInterruptError:
+            log.debug("quit wrapper_func due to InterruptedError")
+            break
+
+    log.debug("wrapper_func terminates gracefully")
+
+
 class Loop(object):
     """
     class to run a function periodically an seperate process.
@@ -204,6 +253,8 @@ class Loop(object):
     when you set auto_kill_on_last_resort to False and answer the
     question to send SIGKILL with no.
     """
+
+    _wrapper_func = staticmethod(_wrapper_func)
 
     def __init__(self,
                  func,
@@ -299,55 +350,6 @@ class Loop(object):
             pass
         log.debug("wait for monitor thread to join")
         self._monitor_thread.join()
-
-    @staticmethod
-    def _wrapper_func(func, args, shared_mem_run, shared_mem_pause, interval, log_queue, sigint, sigterm, name,
-                      logging_level, conn_send):
-        """
-            to be executed as a separate process (that's why this functions is declared static)
-        """
-        prefix = get_identifier(name) + ' '
-        global log
-        log = logging.getLogger(__name__ + '.' + "log_{}".format(get_identifier(name, bold=False)))
-        log.setLevel(logging_level)
-
-        # try:
-        #     log.addHandler(QueueHandler(log_queue))
-        # except NameError:
-        #     log.addHandler(def_handl)
-
-        sys.stdout = StdoutPipe(conn_send)
-
-        log.debug("enter wrapper_func")
-
-        SIG_handler_Loop(sigint, sigterm, log, prefix)
-
-        while shared_mem_run.value:
-            try:
-                # in pause mode, simply sleep 
-                if shared_mem_pause.value:
-                    quit_loop = False
-                else:
-                    # if not pause mode -> call func and see what happens
-                    try:
-                        quit_loop = func(*args)
-                    except LoopInterruptError:
-                        raise
-                    except Exception as e:
-                        log.error("error %s occurred in loop alling 'func(*args)'", type(e))
-                        log.info("show traceback.print_exc()\n%s", traceback.format_exc())
-                        sys.exit(-1)
-
-                    if quit_loop is True:
-                        log.debug("loop stooped because func returned True")
-                        break
-
-                time.sleep(interval)
-            except LoopInterruptError:
-                log.debug("quit wrapper_func due to InterruptedError")
-                break
-
-        log.debug("wrapper_func terminates gracefully")
 
     def _monitor_stdout_pipe(self):
         while True:
@@ -460,6 +462,168 @@ class Loop(object):
         self._run.value = run
 
 
+def _calc(count,
+                    last_count,
+                    start_time,
+                    max_count,
+                    speed_calc_cycles,
+                    q,
+                    last_speed,
+                    lock):
+    """
+        do the pre calculations in order to get TET, speed, TTG
+        and call the actual display routine show_stat with these arguments
+
+        NOTE: show_stat is purely abstract and need to be reimplemented to
+        achieve a specific progress display.
+    """
+    count_value = count.value
+    start_time_value = start_time.value
+    current_time = time.time()
+
+    if last_count.value != count_value:
+        # some progress happened
+
+        with lock:
+            # save current state (count, time) to queue
+
+            q.put((count_value, current_time))
+
+            # get older state from queue (or initial state)
+            # to to speed estimation
+            if q.qsize() > speed_calc_cycles:
+                old_count_value, old_time = q.get()
+            else:
+                old_count_value, old_time = 0, start_time_value
+
+        last_count.value = count_value
+        # last_old_count.value = old_count_value
+        # last_old_time.value = old_time
+
+        speed = (count_value - old_count_value) / (current_time - old_time)
+        last_speed.value = speed
+    else:
+        # progress has not changed since last call
+        # use also old (cached) data from the queue
+        # old_count_value, old_time = last_old_count.value, last_old_time.value
+        speed = last_speed.value
+
+    if (max_count is None):
+        max_count_value = None
+    else:
+        max_count_value = max_count.value
+
+    tet = (current_time - start_time_value)
+
+    if (speed == 0) or (max_count_value is None) or (max_count_value == 0):
+        ttg = None
+    else:
+        ttg = math.ceil((max_count_value - count_value) / speed)
+
+    return count_value, max_count_value, speed, tet, ttg
+
+
+def show_stat_wrapper_multi(count,
+                            last_count,
+                            start_time,
+                            max_count,
+                            speed_calc_cycles,
+                            width,
+                            q,
+                            last_speed,
+                            prepend,
+                            show_stat_function,
+                            len_,
+                            add_args,
+                            lock,
+                            info_line,
+                            no_move_up=False):
+    """
+        call the static method show_stat_wrapper for each process
+    """
+    #         print(ESC_BOLD, end='')
+    #         sys.stdout.flush()
+    for i in range(len_):
+        Progress.show_stat_wrapper(count[i],
+                                   last_count[i],
+                                   start_time[i],
+                                   max_count[i],
+                                   speed_calc_cycles,
+                                   width,
+                                   q[i],
+                                   last_speed[i],
+                                   prepend[i],
+                                   show_stat_function,
+                                   add_args,
+                                   i,
+                                   lock[i])
+    n = len_
+    if info_line is not None:
+        s = info_line.value.decode('utf-8')
+        s = s.split('\n')
+        n += len(s)
+        for si in s:
+            if width == 'auto':
+                width = get_terminal_width()
+            if len(si) > width:
+                si = si[:width]
+            print("{0:<{1}}".format(si, width))
+
+    if no_move_up:
+        n = 0
+        # this is only a hack to find the end
+        # of the message in a stream
+        # so ESC_HIDDEN+ESC_NO_CHAR_ATTR is a magic ending
+    print(ESC_MOVE_LINE_UP(n) + ESC_MY_MAGIC_ENDING, end='')
+    sys.stdout.flush()
+
+
+def show_stat(count_value, max_count_value, prepend, speed, tet, ttg, width, **kwargs):
+    """
+        re implement this function in a subclass
+
+        count_value - current value of progress
+
+        max_count_value - maximum value the progress can take
+
+        prepend - some extra string to be put for example in front of the
+        progress display
+
+        speed - estimated speed in counts per second (use for example humanize_speed
+        to get readable information in string format)
+
+        tet - total elapsed time in seconds (use for example humanize_time
+        to get readable information in string format)
+
+        ttg - time to go in seconds (use for example humanize_time
+        to get readable information in string format)
+    """
+    raise NotImplementedError
+
+
+def show_stat_wrapper(count,
+                      last_count,
+                      start_time,
+                      max_count,
+                      speed_calc_cycles,
+                      width,
+                      q,
+                      last_speed,
+                      prepend,
+                      show_stat_function,
+                      add_args,
+                      i,
+                      lock):
+    count_value, max_count_value, speed, tet, ttg, = Progress._calc(count,
+                                                                    last_count,
+                                                                    start_time,
+                                                                    max_count,
+                                                                    speed_calc_cycles,
+                                                                    q,
+                                                                    last_speed,
+                                                                    lock)
+    return show_stat_function(count_value, max_count_value, prepend, speed, tet, ttg, width, i, **add_args)
+
 class Progress(Loop):
     """
     Abstract Progress Loop
@@ -515,6 +679,11 @@ class Progress(Loop):
     signal handling and exception this might become tricky, so that the  
     use of the 'with' statement is highly encouraged. 
     """
+
+    _calc = staticmethod(_calc)
+    show_stat_wrapper_multi = staticmethod(show_stat_wrapper_multi)
+    show_stat = show_stat
+    show_stat_wrapper = staticmethod(show_stat_wrapper)
 
     def __init__(self,
                  count,
@@ -644,67 +813,6 @@ class Progress(Loop):
     def __exit__(self, *exc_args):
         self.stop()
 
-    @staticmethod
-    def _calc(count,
-              last_count,
-              start_time,
-              max_count,
-              speed_calc_cycles,
-              q,
-              last_speed,
-              lock):
-        """
-            do the pre calculations in order to get TET, speed, TTG
-            and call the actual display routine show_stat with these arguments
-            
-            NOTE: show_stat is purely abstract and need to be reimplemented to
-            achieve a specific progress display.  
-        """
-        count_value = count.value
-        start_time_value = start_time.value
-        current_time = time.time()
-
-        if last_count.value != count_value:
-            # some progress happened
-
-            with lock:
-                # save current state (count, time) to queue
-
-                q.put((count_value, current_time))
-
-                # get older state from queue (or initial state)
-                # to to speed estimation                
-                if q.qsize() > speed_calc_cycles:
-                    old_count_value, old_time = q.get()
-                else:
-                    old_count_value, old_time = 0, start_time_value
-
-            last_count.value = count_value
-            # last_old_count.value = old_count_value
-            # last_old_time.value = old_time
-
-            speed = (count_value - old_count_value) / (current_time - old_time)
-            last_speed.value = speed
-        else:
-            # progress has not changed since last call
-            # use also old (cached) data from the queue
-            # old_count_value, old_time = last_old_count.value, last_old_time.value
-            speed = last_speed.value
-
-        if (max_count is None):
-            max_count_value = None
-        else:
-            max_count_value = max_count.value
-
-        tet = (current_time - start_time_value)
-
-        if (speed == 0) or (max_count_value is None) or (max_count_value == 0):
-            ttg = None
-        else:
-            ttg = math.ceil((max_count_value - count_value) / speed)
-
-        return count_value, max_count_value, speed, tet, ttg
-
     def _reset_all(self):
         """
             reset all progress information
@@ -758,108 +866,6 @@ class Progress(Loop):
         else:
             self._reset_i(i)
             #        super(Progress, self).start()
-
-    @staticmethod
-    def show_stat(count_value, max_count_value, prepend, speed, tet, ttg, width, **kwargs):
-        """
-            re implement this function in a subclass
-            
-            count_value - current value of progress
-            
-            max_count_value - maximum value the progress can take
-            
-            prepend - some extra string to be put for example in front of the
-            progress display
-            
-            speed - estimated speed in counts per second (use for example humanize_speed
-            to get readable information in string format)
-            
-            tet - total elapsed time in seconds (use for example humanize_time
-            to get readable information in string format)
-            
-            ttg - time to go in seconds (use for example humanize_time
-            to get readable information in string format)
-        """
-        raise NotImplementedError
-
-    @staticmethod
-    def show_stat_wrapper(count,
-                          last_count,
-                          start_time,
-                          max_count,
-                          speed_calc_cycles,
-                          width,
-                          q,
-                          last_speed,
-                          prepend,
-                          show_stat_function,
-                          add_args,
-                          i,
-                          lock):
-        count_value, max_count_value, speed, tet, ttg, = Progress._calc(count,
-                                                                        last_count,
-                                                                        start_time,
-                                                                        max_count,
-                                                                        speed_calc_cycles,
-                                                                        q,
-                                                                        last_speed,
-                                                                        lock)
-        return show_stat_function(count_value, max_count_value, prepend, speed, tet, ttg, width, i, **add_args)
-
-    @staticmethod
-    def show_stat_wrapper_multi(count,
-                                last_count,
-                                start_time,
-                                max_count,
-                                speed_calc_cycles,
-                                width,
-                                q,
-                                last_speed,
-                                prepend,
-                                show_stat_function,
-                                len_,
-                                add_args,
-                                lock,
-                                info_line,
-                                no_move_up=False):
-        """
-            call the static method show_stat_wrapper for each process
-        """
-        #         print(ESC_BOLD, end='')
-        #         sys.stdout.flush()
-        for i in range(len_):
-            Progress.show_stat_wrapper(count[i],
-                                       last_count[i],
-                                       start_time[i],
-                                       max_count[i],
-                                       speed_calc_cycles,
-                                       width,
-                                       q[i],
-                                       last_speed[i],
-                                       prepend[i],
-                                       show_stat_function,
-                                       add_args,
-                                       i,
-                                       lock[i])
-        n = len_
-        if info_line is not None:
-            s = info_line.value.decode('utf-8')
-            s = s.split('\n')
-            n += len(s)
-            for si in s:
-                if width == 'auto':
-                    width = get_terminal_width()
-                if len(si) > width:
-                    si = si[:width]
-                print("{0:<{1}}".format(si, width))
-
-        if no_move_up:
-            n = 0
-            # this is only a hack to find the end
-            # of the message in a stream
-            # so ESC_HIDDEN+ESC_NO_CHAR_ATTR is a magic ending
-        print(ESC_MOVE_LINE_UP(n) + ESC_MY_MAGIC_ENDING, end='')
-        sys.stdout.flush()
 
     def start(self):
         # before printing any output to stout, we can now check this
@@ -1781,6 +1787,9 @@ def print_static_method_extraction():
     """Convenience function to print static methods.
 
      Can be copy-pasted at the end of the code to extract them.
+     Unfortunately, that did not appear to solve the problem.
+
+     http://stackoverflow.com/questions/21111106/cant-pickle-static-method-multiprocessing-python
 
     :return:
     """
@@ -1799,43 +1808,6 @@ def print_static_method_extraction():
                 # static_members.append(m[1])
             except:
                 pass
-
-# pull out static methods to fix pickling on Windows
-_loop__wrapper_func = Loop._wrapper_func
-_progress__calc = Progress._calc
-_progress__wrapper_func = Progress._wrapper_func
-_progress_show_stat = Progress.show_stat
-_progress_show_stat_wrapper = Progress.show_stat_wrapper
-_progress_show_stat_wrapper_multi = Progress.show_stat_wrapper_multi
-_progressbar__calc = ProgressBar._calc
-_progressbar__wrapper_func = ProgressBar._wrapper_func
-_progressbar_show_stat = ProgressBar.show_stat
-_progressbar_show_stat_wrapper = ProgressBar.show_stat_wrapper
-_progressbar_show_stat_wrapper_multi = ProgressBar.show_stat_wrapper_multi
-_progressbarcounter__calc = ProgressBarCounter._calc
-_progressbarcounter__wrapper_func = ProgressBarCounter._wrapper_func
-_progressbarcounter_show_stat = ProgressBarCounter.show_stat
-_progressbarcounter_show_stat_wrapper = ProgressBarCounter.show_stat_wrapper
-_progressbarcounter_show_stat_wrapper_multi = ProgressBarCounter.show_stat_wrapper_multi
-_progressbarcounterfancy__calc = ProgressBarCounterFancy._calc
-_progressbarcounterfancy__wrapper_func = ProgressBarCounterFancy._wrapper_func
-_progressbarcounterfancy_show_stat = ProgressBarCounterFancy.show_stat
-_progressbarcounterfancy_show_stat_wrapper = ProgressBarCounterFancy.show_stat_wrapper
-_progressbarcounterfancy_show_stat_wrapper_multi = ProgressBarCounterFancy.show_stat_wrapper_multi
-_progressbarfancy__calc = ProgressBarFancy._calc
-_progressbarfancy__stat = ProgressBarFancy._stat
-_progressbarfancy__wrapper_func = ProgressBarFancy._wrapper_func
-_progressbarfancy_full_minor_stat = ProgressBarFancy.full_minor_stat
-_progressbarfancy_full_stat = ProgressBarFancy.full_stat
-_progressbarfancy_get_d = ProgressBarFancy.get_d
-_progressbarfancy_kw_bold = ProgressBarFancy.kw_bold
-_progressbarfancy_reduced_1_stat = ProgressBarFancy.reduced_1_stat
-_progressbarfancy_reduced_2_stat = ProgressBarFancy.reduced_2_stat
-_progressbarfancy_reduced_3_stat = ProgressBarFancy.reduced_3_stat
-_progressbarfancy_reduced_4_stat = ProgressBarFancy.reduced_4_stat
-_progressbarfancy_show_stat = ProgressBarFancy.show_stat
-_progressbarfancy_show_stat_wrapper = ProgressBarFancy.show_stat_wrapper
-_progressbarfancy_show_stat_wrapper_multi = ProgressBarFancy.show_stat_wrapper_multi
 
 
 if __name__ == '__main__':
