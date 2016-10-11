@@ -1801,41 +1801,41 @@ def print_static_method_extraction():
                 pass
 
 # pull out static methods to fix pickling on Windows
-_loop__wrapper_func = Loop._wrapper_func
-_progress__calc = Progress._calc
-_progress__wrapper_func = Progress._wrapper_func
-_progress_show_stat = Progress.show_stat
-_progress_show_stat_wrapper = Progress.show_stat_wrapper
-_progress_show_stat_wrapper_multi = Progress.show_stat_wrapper_multi
-_progressbar__calc = ProgressBar._calc
-_progressbar__wrapper_func = ProgressBar._wrapper_func
-_progressbar_show_stat = ProgressBar.show_stat
-_progressbar_show_stat_wrapper = ProgressBar.show_stat_wrapper
-_progressbar_show_stat_wrapper_multi = ProgressBar.show_stat_wrapper_multi
-_progressbarcounter__calc = ProgressBarCounter._calc
-_progressbarcounter__wrapper_func = ProgressBarCounter._wrapper_func
-_progressbarcounter_show_stat = ProgressBarCounter.show_stat
-_progressbarcounter_show_stat_wrapper = ProgressBarCounter.show_stat_wrapper
-_progressbarcounter_show_stat_wrapper_multi = ProgressBarCounter.show_stat_wrapper_multi
-_progressbarcounterfancy__calc = ProgressBarCounterFancy._calc
-_progressbarcounterfancy__wrapper_func = ProgressBarCounterFancy._wrapper_func
-_progressbarcounterfancy_show_stat = ProgressBarCounterFancy.show_stat
-_progressbarcounterfancy_show_stat_wrapper = ProgressBarCounterFancy.show_stat_wrapper
-_progressbarcounterfancy_show_stat_wrapper_multi = ProgressBarCounterFancy.show_stat_wrapper_multi
-_progressbarfancy__calc = ProgressBarFancy._calc
-_progressbarfancy__stat = ProgressBarFancy._stat
-_progressbarfancy__wrapper_func = ProgressBarFancy._wrapper_func
-_progressbarfancy_full_minor_stat = ProgressBarFancy.full_minor_stat
-_progressbarfancy_full_stat = ProgressBarFancy.full_stat
-_progressbarfancy_get_d = ProgressBarFancy.get_d
-_progressbarfancy_kw_bold = ProgressBarFancy.kw_bold
-_progressbarfancy_reduced_1_stat = ProgressBarFancy.reduced_1_stat
-_progressbarfancy_reduced_2_stat = ProgressBarFancy.reduced_2_stat
-_progressbarfancy_reduced_3_stat = ProgressBarFancy.reduced_3_stat
-_progressbarfancy_reduced_4_stat = ProgressBarFancy.reduced_4_stat
-_progressbarfancy_show_stat = ProgressBarFancy.show_stat
-_progressbarfancy_show_stat_wrapper = ProgressBarFancy.show_stat_wrapper
-_progressbarfancy_show_stat_wrapper_multi = ProgressBarFancy.show_stat_wrapper_multi
+# _loop__wrapper_func = Loop._wrapper_func
+_calc = Progress._calc
+_wrapper_func = Progress._wrapper_func
+# show_stat = Progress.show_stat
+show_stat_wrapper = Progress.show_stat_wrapper
+show_stat_wrapper_multi = Progress.show_stat_wrapper_multi
+# _progressbar__calc = ProgressBar._calc
+# _progressbar__wrapper_func = ProgressBar._wrapper_func
+show_stat = ProgressBar.show_stat
+# _progressbar_show_stat_wrapper = ProgressBar.show_stat_wrapper
+# _progressbar_show_stat_wrapper_multi = ProgressBar.show_stat_wrapper_multi
+# _progressbarcounter__calc = ProgressBarCounter._calc
+# _progressbarcounter__wrapper_func = ProgressBarCounter._wrapper_func
+# _progressbarcounter_show_stat = ProgressBarCounter.show_stat
+# _progressbarcounter_show_stat_wrapper = ProgressBarCounter.show_stat_wrapper
+# _progressbarcounter_show_stat_wrapper_multi = ProgressBarCounter.show_stat_wrapper_multi
+# _progressbarcounterfancy__calc = ProgressBarCounterFancy._calc
+# _progressbarcounterfancy__wrapper_func = ProgressBarCounterFancy._wrapper_func
+# _progressbarcounterfancy_show_stat = ProgressBarCounterFancy.show_stat
+# _progressbarcounterfancy_show_stat_wrapper = ProgressBarCounterFancy.show_stat_wrapper
+# _progressbarcounterfancy_show_stat_wrapper_multi = ProgressBarCounterFancy.show_stat_wrapper_multi
+# _progressbarfancy__calc = ProgressBarFancy._calc
+# _progressbarfancy__stat = ProgressBarFancy._stat
+# _progressbarfancy__wrapper_func = ProgressBarFancy._wrapper_func
+# _progressbarfancy_full_minor_stat = ProgressBarFancy.full_minor_stat
+# _progressbarfancy_full_stat = ProgressBarFancy.full_stat
+# _progressbarfancy_get_d = ProgressBarFancy.get_d
+# _progressbarfancy_kw_bold = ProgressBarFancy.kw_bold
+# _progressbarfancy_reduced_1_stat = ProgressBarFancy.reduced_1_stat
+# _progressbarfancy_reduced_2_stat = ProgressBarFancy.reduced_2_stat
+# _progressbarfancy_reduced_3_stat = ProgressBarFancy.reduced_3_stat
+# _progressbarfancy_reduced_4_stat = ProgressBarFancy.reduced_4_stat
+# _progressbarfancy_show_stat = ProgressBarFancy.show_stat
+# _progressbarfancy_show_stat_wrapper = ProgressBarFancy.show_stat_wrapper
+# _progressbarfancy_show_stat_wrapper_multi = ProgressBarFancy.show_stat_wrapper_multi
 
 
 if __name__ == '__main__':
